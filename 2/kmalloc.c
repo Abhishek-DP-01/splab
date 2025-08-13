@@ -1,49 +1,42 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
-#include <linux/proc_fs.h>
-#include <linux/sched.h>
-#include <linux/uaccess.h>
-#include <linux/vmalloc.h>
-
-     char *kmalloc_ptr;
-    char *vmalloc_ptr;
-static int __init task_details_lkm_init(void) {
-
-
-    printk(KERN_INFO "Initializing memory allocation LKM...\n");
-
-    // Allocate memory using kmalloc
-    kmalloc_ptr = kmalloc(1024, GFP_KERNEL); // Allocate 1KB of memory
-    if (!kmalloc_ptr) {
-        printk(KERN_ERR "Failed to allocate memory using kmalloc\n");
-        return -ENOMEM;
-    }
-
-    // Allocate memory using vmalloc
-    vmalloc_ptr = vmalloc(4096); // Allocate 4KB of memory using vmalloc
-    if (!vmalloc_ptr) {
-        printk(KERN_ERR "Failed to allocate memory using vmalloc\n");
-        kfree(kmalloc_ptr); // Release previously allocated kmalloc memory
-        return -ENOMEM;
-    }
-
-    printk(KERN_INFO "Memory allocation using kmalloc and vmalloc successful\n");
-    
-
-    return 0; // Module loaded successfully
-}
-
-static void __exit task_details_lkm_exit(void) {
-    // Release the allocated memory
-    kfree(kmalloc_ptr);
-    vfree(vmalloc_ptr);
-    printk(KERN_INFO "Exiting memory allocation LKM...\n");
-}
-
-module_init(task_details_lkm_init);
-module_exit(task_details_lkm_exit);
+#include <linux/init.h>
+#include <linux/sched/signal.h>
+#include <linux/slab.h>
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Your Name");
-MODULE_DESCRIPTION("LKM for printing task details in a proc file");
 
+struct process_info {
+    pid_t pid;
+    char comm[TASK_COMM_LEN];
+};
+
+static struct process_info *procs;
+static int count = 0;
+
+static int __init proc_init(void)
+{
+    struct task_struct *task;
+    int i = 0;
+
+    for_each_process(task) count++; // Count processes
+    procs = kmalloc_array(count, sizeof(*procs), GFP_KERNEL);
+    if (!procs) return -ENOMEM;
+
+    for_each_process(task) { // Store info
+        procs[i].pid = task->pid;
+        strncpy(procs[i].comm, task->comm, TASK_COMM_LEN);
+        pr_info("PID: %d | Name: %s\n", procs[i].pid, procs[i].comm);
+        i++;
+    }
+    return 0;
+}
+
+static void __exit proc_exit(void)
+{
+    kfree(procs);
+    pr_info("Freed process info memory\n");
+}
+
+module_init(proc_init);
+module_exit(proc_exit);
